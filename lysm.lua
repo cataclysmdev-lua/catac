@@ -155,9 +155,8 @@ local function openSettingsFor(mod, posX, posY)
 end
 
 -- Закрыть настройки при клике вне панели
-ScreenGui.InputBegan:Connect(function(input)
+UserInputService.InputBegan:Connect(function(input, gp)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        -- проверяем не по настройкам ли кликнули
         local mp = UserInputService:GetMouseLocation()
         local sp = SettingsPanel
         if sp.Visible then
@@ -166,7 +165,6 @@ ScreenGui.InputBegan:Connect(function(input)
             local aw = sp.AbsoluteSize.X
             local ah = sp.AbsoluteSize.Y
             if mp.X < ax or mp.X > ax+aw or mp.Y < ay or mp.Y > ay+ah then
-                -- также убеждаемся что не кликнули по самому модулю
                 closeSP()
             end
         end
