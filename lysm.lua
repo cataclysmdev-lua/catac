@@ -1,16 +1,15 @@
 --[[
-    PadUI.lua (v2)
+    PadUI.lua (v3)
     ClickGUI framework — Minecraft cheat client aesthetic
-    
+
     Binds:
-      M3 (middle click) on module → press key to bind
-      Left Alt + click on module  → clear bind
-      RightShift                  → toggle GUI
-    
+      M3 (middle click) on module → press key to bind, Esc to clear
+      Left Alt + LMB on module   → clear bind
+      RightShift                 → toggle GUI
+
     Keybind list (watermark-style):
-      Shows active (toggled ON) modules that have a bind
-      Format: "Module Name [KEY]"
-      Slide-in / slide-out animation
+      Shows modules that are ON and have a bind
+      Format: "Module Name [KEY]"  — slide-in/out animated
 ]]
 
 local TweenService     = game:GetService("TweenService")
@@ -19,40 +18,39 @@ local RunService       = game:GetService("RunService")
 local TextService      = game:GetService("TextService")
 local Lighting         = game:GetService("Lighting")
 local CoreGui          = game:GetService("CoreGui")
-local Players          = game:GetService("Players")
 
-pcall(function() CoreGui:FindFirstChild("PadUI"):Destroy() end)
+pcall(function() CoreGui:FindFirstChild("PadUI"):Destroy() end
+)pcall(function() CoreGui:FindFirstChild("PadUI_KB"):Destroy() end)
 
 -- ══════════════════════════════════════════════════════════════════
 --  THEME
 -- ══════════════════════════════════════════════════════════════════
 local Theme = {
-    Background  = Color3.fromRGB(7, 7, 7),
-    Text        = Color3.fromRGB(255, 255, 255),
-    TextDark    = Color3.fromRGB(125, 125, 125),
-    Hover       = Color3.fromRGB(122, 122, 122),
-    BindActive  = Color3.fromRGB(220, 220, 220),
-    BindIdle    = Color3.fromRGB(60, 60, 60),
-    SettingsBG  = Color3.fromRGB(14, 14, 14),
+    Background = Color3.fromRGB(7, 7, 7),
+    Text       = Color3.fromRGB(255, 255, 255),
+    TextDark   = Color3.fromRGB(125, 125, 125),
+    Hover      = Color3.fromRGB(122, 122, 122),
+    BindActive = Color3.fromRGB(220, 220, 220),
+    SettingsBG = Color3.fromRGB(14, 14, 14),
 }
 
 -- ══════════════════════════════════════════════════════════════════
---  KEYBIND LIST CONFIG  (matches watermark.lua style)
+--  KEYBIND LIST CONFIG
 -- ══════════════════════════════════════════════════════════════════
 local KB = {
-    x          = 10,
-    y          = 60,
-    headerH    = 22,
-    rowH       = 20,
-    rowGap     = 2,
-    padL       = 6,
-    slideSpeed = 8,
-    sizeSpeed  = 10,
-    textSize   = 12,
-    keyTextSize= 11,
+    x            = 10,
+    y            = 60,
+    headerH      = 22,
+    rowH         = 20,
+    rowGap       = 2,
+    padL         = 6,
+    slideSpeed   = 8,
+    sizeSpeed    = 10,
+    textSize     = 12,
+    keyTextSize  = 11,
     cornerRadius = 6,
-    bgColor    = Color3.fromRGB(18, 19, 20),
-    bgTrans    = 0.71,
+    bgColor      = Color3.fromRGB(18, 19, 20),
+    bgTrans      = 0.71,
     outlineColor = Color3.fromRGB(255, 255, 255),
     outlineTrans = 0.78,
     shadowColor  = Color3.fromRGB(0, 0, 0),
@@ -69,14 +67,15 @@ Blur.Size   = 0
 Blur.Parent = Lighting
 
 local Bloom = Instance.new("BloomEffect")
-Bloom.Intensity  = 0
-Bloom.Size       = 24
-Bloom.Threshold  = 0.85
-Bloom.Parent     = Lighting
+Bloom.Intensity = 0
+Bloom.Size      = 24
+Bloom.Threshold = 0.85
+Bloom.Parent    = Lighting
 
 -- ══════════════════════════════════════════════════════════════════
---  SCREEN GUI
+--  SCREEN GUIS
 -- ══════════════════════════════════════════════════════════════════
+-- Main GUI (hidden until RightShift)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name            = "PadUI"
 ScreenGui.ResetOnSpawn    = false
@@ -85,7 +84,7 @@ ScreenGui.IgnoreGuiInset  = true
 ScreenGui.Enabled         = false
 ScreenGui.Parent          = CoreGui
 
--- ── Keybind list lives in its own always-on ScreenGui ──────────────
+-- KB list + hint live here — always visible
 local KBGui = Instance.new("ScreenGui")
 KBGui.Name            = "PadUI_KB"
 KBGui.ResetOnSpawn    = false
@@ -94,7 +93,7 @@ KBGui.IgnoreGuiInset  = true
 KBGui.Enabled         = true
 KBGui.Parent          = CoreGui
 
--- ── Holder (main panel group) ───────────────────────────────────────
+-- Holder for panels
 local Holder = Instance.new("Frame")
 Holder.BackgroundTransparency = 1
 Holder.Parent = ScreenGui
@@ -104,58 +103,22 @@ UIScale.Scale  = 0.92
 UIScale.Parent = Holder
 
 -- ══════════════════════════════════════════════════════════════════
---  BIND STATE  (global registry)
+--  LISTEN HINT  (follows cursor while waiting for key)
 -- ══════════════════════════════════════════════════════════════════
--- moduleBinds[moduleButton] = { key=Enum.KeyCode|nil, listening=false, name=string, enabled=false }
-local moduleBinds     = {}
-local listeningModule = nil   -- which module is waiting for a key
-
--- ── Small "press key…" tooltip that follows the mouse ──────────────
 local ListenHint = Instance.new("TextLabel")
-ListenHint.Name                 = "ListenHint"
-ListenHint.BackgroundColor3     = Theme.SettingsBG
+ListenHint.BackgroundColor3       = Theme.SettingsBG
 ListenHint.BackgroundTransparency = 0.15
-ListenHint.BorderSizePixel      = 0
-ListenHint.Size                 = UDim2.new(0, 100, 0, 22)
-ListenHint.Font                 = Enum.Font.GothamMedium
-ListenHint.Text                 = "Press key…"
-ListenHint.TextColor3           = Theme.BindActive
-ListenHint.TextSize             = 11
-ListenHint.ZIndex               = 200
-ListenHint.Visible              = false
-ListenHint.Parent               = ScreenGui
+ListenHint.BorderSizePixel        = 0
+ListenHint.Size                   = UDim2.new(0, 100, 0, 22)
+ListenHint.Font                   = Enum.Font.GothamMedium
+ListenHint.Text                   = "Press key…"
+ListenHint.TextColor3             = Theme.BindActive
+ListenHint.TextSize               = 11
+ListenHint.ZIndex                 = 200
+ListenHint.Visible                = false
+ListenHint.Parent                 = KBGui   -- always-on gui!
 Instance.new("UICorner", ListenHint).CornerRadius = UDim.new(0, 6)
 
-local function getOrCreate(mod, name)
-    if not moduleBinds[mod] then
-        moduleBinds[mod] = { key = nil, listening = false, name = name, enabled = false }
-    end
-    return moduleBinds[mod]
-end
-
-local function startListening(mod)
-    if listeningModule and listeningModule ~= mod then
-        -- cancel previous
-        local prev = moduleBinds[listeningModule]
-        if prev then prev.listening = false end
-    end
-    local bind = moduleBinds[mod]
-    if not bind then return end
-    bind.listening = true
-    listeningModule = mod
-    ListenHint.Visible = true
-end
-
-local function stopListening()
-    if listeningModule then
-        local bind = moduleBinds[listeningModule]
-        if bind then bind.listening = false end
-    end
-    listeningModule = nil
-    ListenHint.Visible = false
-end
-
--- Move hint with mouse
 RunService.RenderStepped:Connect(function()
     if ListenHint.Visible then
         local mp = UserInputService:GetMouseLocation()
@@ -163,30 +126,67 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ── Global input: catch bind key, toggle via bind ───────────────────
+-- ══════════════════════════════════════════════════════════════════
+--  BIND STATE
+-- ══════════════════════════════════════════════════════════════════
+-- moduleBinds[ModuleButton] = {
+--   key       = Enum.KeyCode | nil,
+--   listening = bool,
+--   enabled   = bool,
+--   name      = string,
+--   onRefresh = function,   ← called by global handler to update the dot/label
+-- }
+local moduleBinds     = {}
+local listeningModule = nil  -- TextButton currently waiting for a key
+
+local function startListening(mod)
+    -- cancel any previous listener
+    if listeningModule and listeningModule ~= mod then
+        local prev = moduleBinds[listeningModule]
+        if prev then
+            prev.listening = false
+            if prev.onRefresh then prev.onRefresh() end
+        end
+    end
+    local bind = moduleBinds[mod]
+    if not bind then return end
+    bind.listening    = true
+    listeningModule   = mod
+    ListenHint.Visible = true
+    bind.onRefresh()  -- show dot immediately
+end
+
+local function stopListening()
+    if listeningModule then
+        local bind = moduleBinds[listeningModule]
+        if bind then
+            bind.listening = false
+            if bind.onRefresh then bind.onRefresh() end  -- update label/dot
+        end
+    end
+    listeningModule    = nil
+    ListenHint.Visible = false
+end
+
+-- ── Global input ────────────────────────────────────────────────
 UserInputService.InputBegan:Connect(function(input, gp)
-    -- listening for a new bind key
+    -- A) capture bind key
     if listeningModule then
         if input.UserInputType == Enum.UserInputType.Keyboard then
             local bind = moduleBinds[listeningModule]
             if bind then
-                if input.KeyCode == Enum.KeyCode.Escape then
-                    bind.key = nil
-                else
-                    bind.key = input.KeyCode
-                end
+                bind.key = (input.KeyCode == Enum.KeyCode.Escape) and nil or input.KeyCode
             end
             stopListening()
             return
         end
         if input.UserInputType == Enum.UserInputType.MouseButton3 then
-            -- M3 again = cancel
-            stopListening()
+            stopListening()  -- M3 again = cancel
             return
         end
     end
 
-    -- fire module toggles via keybind
+    -- B) fire module keybind toggles
     if input.UserInputType == Enum.UserInputType.Keyboard and not gp then
         for mod, bind in pairs(moduleBinds) do
             if bind.key and input.KeyCode == bind.key then
@@ -197,7 +197,7 @@ UserInputService.InputBegan:Connect(function(input, gp)
 end)
 
 -- ══════════════════════════════════════════════════════════════════
---  KEYBIND LIST DRAWING  (watermark.lua style, pools)
+--  KEYBIND LIST DRAWING  (pool-based, watermark style)
 -- ══════════════════════════════════════════════════════════════════
 local FONT_TEXT = Enum.Font.GothamBold
 
@@ -205,7 +205,6 @@ local function measure(str, size, font)
     return TextService:GetTextSize(str, size, font, Vector2.new(2000, 100)).X
 end
 
--- Frame pool
 local framePool, frameCursor = {}, 0
 local function beginFrames() frameCursor = 0 end
 local function getFrame(z)
@@ -216,7 +215,7 @@ local function getFrame(z)
         f.Parent = KBGui
         framePool[frameCursor] = f
     end
-    local f = framePool[frameCursor]
+    local f   = framePool[frameCursor]
     f.Visible = true
     f.ZIndex  = z or 2
     return f
@@ -225,7 +224,6 @@ local function endFrames()
     for i = frameCursor + 1, #framePool do framePool[i].Visible = false end
 end
 
--- Label pool
 local labelPool, labelCursor = {}, 0
 local function beginLabels() labelCursor = 0 end
 local function getLabel(z)
@@ -238,7 +236,7 @@ local function getLabel(z)
         l.Parent                 = KBGui
         labelPool[labelCursor]   = l
     end
-    local l = labelPool[labelCursor]
+    local l   = labelPool[labelCursor]
     l.Visible = true
     l.ZIndex  = z or 5
     return l
@@ -274,9 +272,7 @@ local function makeBlock(x, y, w, h, zBase)
 end
 
 local function drawStrPlain(str, x, y, color, font, size, alignRight, z)
-    if alignRight then
-        x = x - measure(str, size, font)
-    end
+    if alignRight then x = x - measure(str, size, font) end
     local curX = x
     for i = 1, #str do
         local ch  = str:sub(i, i)
@@ -293,8 +289,6 @@ local function drawStrPlain(str, x, y, color, font, size, alignRight, z)
     return curX
 end
 
--- ── Per-entry slide state ─────────────────────────────────────────
--- entries: { mod=TextButton, name=string, keyName=string, slideT=float, active=bool }
 local kbEntries = {}
 local smoothW   = -1
 local smoothH   = -1
@@ -303,7 +297,6 @@ local function easeOut(t)
     t = math.clamp(t, 0, 1)
     return 1 - (1 - t)^3
 end
-
 local function smoothTo(cur, target, dt, speed)
     if not (dt > 0) then return target end
     return cur + (target - cur) * (1 - math.exp(-speed * dt))
@@ -311,7 +304,7 @@ end
 
 local lastKBTime = tick()
 
-local function tickKeybindList()
+RunService.RenderStepped:Connect(function()
     local now = tick()
     local dt  = math.clamp(now - lastKBTime, 0, 0.1)
     lastKBTime = now
@@ -319,14 +312,13 @@ local function tickKeybindList()
     beginFrames()
     beginLabels()
 
-    -- Sync entries from moduleBinds
-    -- Add/update entries for modules that are ON and have a bind
+    -- sync entries
     for mod, bind in pairs(moduleBinds) do
         local shouldShow = bind.enabled and bind.key ~= nil
         local found = false
         for _, e in ipairs(kbEntries) do
             if e.mod == mod then
-                found = true
+                found    = true
                 e.active  = shouldShow
                 e.keyName = bind.key and bind.key.Name or ""
                 break
@@ -343,36 +335,28 @@ local function tickKeybindList()
         end
     end
 
-    -- Animate
+    -- animate
     for i = #kbEntries, 1, -1 do
         local e = kbEntries[i]
-        local target = e.active and 1 or 0
-        e.slideT = smoothTo(e.slideT, target, dt, KB.slideSpeed)
+        e.slideT = smoothTo(e.slideT, e.active and 1 or 0, dt, KB.slideSpeed)
         if not e.active and e.slideT < 0.01 then
             table.remove(kbEntries, i)
         end
     end
 
     if #kbEntries == 0 and smoothH < 1 then
-        endFrames()
-        endLabels()
-        return
+        endFrames(); endLabels(); return
     end
 
     local kx = KB.x
     local ky = KB.y
     local ts = KB.textSize
     local ks = KB.keyTextSize
-
-    -- Target width
-    local header   = "Key Binds"
-    local headerTW = measure(header, ts, FONT_TEXT)
-    local targetW  = headerTW + KB.padL * 2 + 16
+    local header  = "Key Binds"
+    local targetW = measure(header, ts, FONT_TEXT) + KB.padL * 2 + 16
 
     for _, e in ipairs(kbEntries) do
-        local label   = e.name .. " [" .. e.keyName .. "]"
-        local labelW  = measure(label, ts, FONT_TEXT)
-        local rowW    = KB.padL * 2 + labelW
+        local rowW = KB.padL * 2 + measure(e.name, ts, FONT_TEXT) + 8 + measure("[" .. e.keyName .. "]", ks, FONT_TEXT)
         if rowW > targetW then targetW = rowW end
     end
     targetW = math.max(targetW, 100)
@@ -381,7 +365,6 @@ local function tickKeybindList()
     smoothW = smoothTo(smoothW, targetW, dt, KB.sizeSpeed)
     local panelW = math.floor(smoothW)
 
-    -- Target height
     local targetH = KB.headerH
     for _, e in ipairs(kbEntries) do
         targetH += (KB.rowH + KB.rowGap) * easeOut(e.slideT)
@@ -389,50 +372,35 @@ local function tickKeybindList()
     if smoothH < 0 then smoothH = targetH end
     smoothH = smoothTo(smoothH, targetH, dt, KB.sizeSpeed)
 
-    -- Header
     makeBlock(kx, ky, panelW, KB.headerH, 1)
     local textY = ky + (KB.headerH - ts) / 2 - 1
     drawStrPlain(header, kx + KB.padL, textY, Color3.fromRGB(220, 220, 220), FONT_TEXT, ts, false, 5)
 
-    -- Horizontal sep under header
     local hSep = getFrame(4)
     hSep.BackgroundColor3       = KB.sepColor
     hSep.BackgroundTransparency = KB.sepTrans
     hSep.Position               = UDim2.fromOffset(kx, ky + KB.headerH - 1)
     hSep.Size                   = UDim2.fromOffset(panelW, 1)
 
-    -- Rows
-    local rowY = ky + KB.headerH + KB.rowGap
+    local rowY      = ky + KB.headerH + KB.rowGap
     local textColor = Color3.fromRGB(210, 210, 210)
     local dimColor  = Color3.fromRGB(130, 130, 130)
 
     for _, e in ipairs(kbEntries) do
         local pc = easeOut(e.slideT)
-        if pc < 0.01 then
-            rowY += (KB.rowH + KB.rowGap) * pc
-        else
-            -- slide in from left
+        if pc >= 0.01 then
             local rowX = kx - panelW + panelW * pc
             makeBlock(math.floor(rowX), math.floor(rowY), panelW, KB.rowH, 1)
-
             local nameY = math.floor(rowY + (KB.rowH - ts) / 2) - 1
-
-            -- "Name" left side
             drawStrPlain(e.name, math.floor(rowX) + KB.padL, nameY, textColor, FONT_TEXT, ts, false, 5)
-
-            -- "[KEY]" right side in dimmer color
-            local keyStr = "[" .. e.keyName .. "]"
-            drawStrPlain(keyStr, math.floor(rowX) + panelW - KB.padL, nameY, dimColor, FONT_TEXT, ks, true, 5)
-
-            rowY += (KB.rowH + KB.rowGap) * pc
+            drawStrPlain("[" .. e.keyName .. "]", math.floor(rowX) + panelW - KB.padL, nameY, dimColor, FONT_TEXT, ks, true, 5)
         end
+        rowY += (KB.rowH + KB.rowGap) * pc
     end
 
     endFrames()
     endLabels()
-end
-
-RunService.RenderStepped:Connect(tickKeybindList)
+end)
 
 -- ══════════════════════════════════════════════════════════════════
 --  DRAGGING
@@ -446,17 +414,12 @@ Holder.InputBegan:Connect(function(input)
     end
 end)
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
-    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
 end)
 UserInputService.InputChanged:Connect(function(input)
     if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
         local d = input.Position - dragStart
-        Holder.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + d.X,
-            startPos.Y.Scale, startPos.Y.Offset + d.Y
-        )
+        Holder.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
     end
 end)
 
@@ -464,7 +427,6 @@ end)
 --  GUI TOGGLE
 -- ══════════════════════════════════════════════════════════════════
 local Open = false
-
 local function ToggleGUI(state)
     Open = state
     if state then
@@ -500,8 +462,7 @@ local PANEL_GAP  = 5
 
 function PadUI:AddCategory(name)
     panelCount += 1
-    local idx = panelCount
-
+    local idx    = panelCount
     local totalW = panelCount * PANEL_W + (panelCount - 1) * PANEL_GAP
     Holder.Size     = UDim2.new(0, totalW, 0, 320)
     Holder.Position = UDim2.new(0.5, -totalW / 2, 0.5, -160)
@@ -557,54 +518,63 @@ function PadUI:AddCategory(name)
         Module.TextColor3             = Theme.TextDark
         Module.TextXAlignment         = Enum.TextXAlignment.Left
         Module.Parent                 = Scroll
-
         Instance.new("UICorner", Module).CornerRadius = UDim.new(0, 8)
         Instance.new("UIPadding", Module).PaddingLeft = UDim.new(0, 10)
 
-        -- Bind label (right side, shows key or "...")
+        -- Right-side bind label ("..." / key name)
         local BindLabel = Instance.new("TextLabel")
-        BindLabel.Name                 = "BindLabel"
         BindLabel.BackgroundTransparency = 1
-        BindLabel.AnchorPoint          = Vector2.new(1, 0)
-        BindLabel.Position             = UDim2.new(1, -6, 0, 0)
-        BindLabel.Size                 = UDim2.new(0, 36, 1, 0)
-        BindLabel.Font                 = Enum.Font.GothamBold
-        BindLabel.Text                 = "..."
-        BindLabel.TextColor3           = Theme.TextDark
-        BindLabel.TextSize             = 9
-        BindLabel.TextTruncate         = Enum.TextTruncate.AtEnd
-        BindLabel.Parent               = Module
+        BindLabel.AnchorPoint            = Vector2.new(1, 0)
+        BindLabel.Position               = UDim2.new(1, -8, 0, 0)
+        BindLabel.Size                   = UDim2.new(0, 36, 1, 0)
+        BindLabel.Font                   = Enum.Font.GothamBold
+        BindLabel.Text                   = "..."
+        BindLabel.TextColor3             = Theme.TextDark
+        BindLabel.TextSize               = 9
+        BindLabel.TextXAlignment         = Enum.TextXAlignment.Right
+        BindLabel.TextTruncate           = Enum.TextTruncate.AtEnd
+        BindLabel.Parent                 = Module
 
-        -- Listening indicator dot (shows when M3 pressed, waiting for key)
+        -- Small dot shown while listening
         local ListenDot = Instance.new("Frame")
-        ListenDot.AnchorPoint        = Vector2.new(1, 0.5)
-        ListenDot.Position           = UDim2.new(1, -6, 0.5, 0)
-        ListenDot.Size               = UDim2.new(0, 5, 0, 5)
-        ListenDot.BackgroundColor3   = Theme.BindActive
-        ListenDot.BorderSizePixel    = 0
-        ListenDot.Visible            = false
-        ListenDot.Parent             = Module
+        ListenDot.AnchorPoint      = Vector2.new(1, 0.5)
+        ListenDot.Position         = UDim2.new(1, -10, 0.5, 0)
+        ListenDot.Size             = UDim2.new(0, 5, 0, 5)
+        ListenDot.BackgroundColor3 = Theme.BindActive
+        ListenDot.BorderSizePixel  = 0
+        ListenDot.Visible          = false
+        ListenDot.Parent           = Module
         Instance.new("UICorner", ListenDot).CornerRadius = UDim.new(1, 0)
 
-        -- Register in global bind table
-        getOrCreate(Module, label)
+        -- Register bind entry
+        moduleBinds[Module] = {
+            key       = nil,
+            listening = false,
+            enabled   = false,
+            name      = label,
+            onRefresh = nil,  -- set below
+        }
 
+        -- Refresh the dot + label to match current bind state
         local function refreshBindLabel()
             local bind = moduleBinds[Module]
             if not bind then return end
             if bind.listening then
-                BindLabel.Text      = ""
-                ListenDot.Visible   = true
+                BindLabel.Text    = ""
+                ListenDot.Visible = true
             elseif bind.key then
-                BindLabel.Text      = bind.key.Name:sub(1, 5)
+                BindLabel.Text       = bind.key.Name:sub(1, 5)
                 BindLabel.TextColor3 = Theme.BindActive
-                ListenDot.Visible   = false
+                ListenDot.Visible    = false
             else
-                BindLabel.Text      = "..."
+                BindLabel.Text       = "..."
                 BindLabel.TextColor3 = Theme.TextDark
-                ListenDot.Visible   = false
+                ListenDot.Visible    = false
             end
         end
+
+        -- Expose to global handler
+        moduleBinds[Module].onRefresh = refreshBindLabel
 
         local function setStyle(on)
             TweenService:Create(Module, TweenInfo.new(0.12), {
@@ -616,8 +586,15 @@ function PadUI:AddCategory(name)
             }):Play()
         end
 
-        -- LMB — toggle
-        Module.MouseButton1Click:Connect(function()
+        -- LMB: toggle (or clear bind if Alt held)
+        Module.MouseButton1Down:Connect(function()
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+            or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then
+                -- Alt + click = clear bind only, no toggle
+                moduleBinds[Module].key = nil
+                refreshBindLabel()
+                return
+            end
             enabled = not enabled
             Module:SetAttribute("Enabled", enabled)
             moduleBinds[Module].enabled = enabled
@@ -626,44 +603,13 @@ function PadUI:AddCategory(name)
             if callback then callback(enabled) end
         end)
 
-        -- M3 (middle click) — start listening for bind
+        -- M3: start listening for a key
         Module.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton3 then
-                local bind = moduleBinds[Module]
-                if not bind then return end
-                -- if already listening on this module → cancel
-                if bind.listening then
-                    stopListening()
-                    refreshBindLabel()
-                    return
-                end
+            if input.UserInputType ~= Enum.UserInputType.MouseButton3 then return end
+            if moduleBinds[Module].listening then
+                stopListening()  -- M3 again cancels
+            else
                 startListening(Module)
-                refreshBindLabel()
-
-                -- poll until stopListening clears it, then refresh
-                task.spawn(function()
-                    while moduleBinds[Module] and moduleBinds[Module].listening do
-                        task.wait()
-                    end
-                    refreshBindLabel()
-                end)
-            end
-        end)
-
-        -- Left Alt + LMB — clear bind
-        Module.MouseButton1Click:Connect(function()
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-            or UserInputService:IsKeyDown(Enum.KeyCode.RightAlt) then
-                local bind = moduleBinds[Module]
-                if bind then
-                    bind.key = nil
-                    refreshBindLabel()
-                end
-                -- don't toggle when clearing
-                enabled = not enabled  -- undo the toggle that fired first
-                Module:SetAttribute("Enabled", enabled)
-                moduleBinds[Module].enabled = enabled
-                setStyle(enabled)
             end
         end)
 
@@ -675,7 +621,7 @@ function PadUI:AddCategory(name)
             if not enabled then setStyle(false) end
         end)
 
-        -- Bind-toggle via keybind (attribute signal)
+        -- Keybind toggle (fired by global InputBegan via attribute)
         Module:GetAttributeChangedSignal("BindToggle"):Connect(function()
             enabled = not enabled
             Module:SetAttribute("Enabled", enabled)
@@ -693,11 +639,10 @@ function PadUI:AddCategory(name)
             setStyle(state)
             refreshBindLabel()
         end
-        function handle:GetState()   return enabled end
-        function handle:SetLabel(t)  Module.Text = t end
+        function handle:GetState()  return enabled end
+        function handle:SetLabel(t) Module.Text = t end
         function handle:GetBind()
-            local b = moduleBinds[Module]
-            return b and b.key or nil
+            return moduleBinds[Module] and moduleBinds[Module].key or nil
         end
         return handle
     end
